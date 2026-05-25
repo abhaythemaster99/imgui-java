@@ -19,6 +19,9 @@ jobs:
             g++-aarch64-linux-gnu \
             cmake
 
+      - name: List all CMakeLists.txt files
+        run: find . -name "CMakeLists.txt" ! -path "*/build/*"
+
       - name: Rename package to moulberry90
         run: |
           find . -name "*.cpp" -o -name "*.h" | \
@@ -34,23 +37,45 @@ jobs:
           set(CMAKE_SYSTEM_PROCESSOR aarch64)
           set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
           set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
           EOF
 
       - name: Build
         run: |
+          # Find main CMakeLists.txt, excluding dependencies
           CMAKE_SRC=$(find . -name "CMakeLists.txt" \
-            ! -path "*/build/*" | head -1 | xargs dirname)
+            ! -path "*/build/*" \
+            ! -path "*/external/*" \
+            ! -path "*/include/*" \
+            ! -path "*/example/*" \
+            ! -path "*/docs/*" \
+            -maxdepth 4 \
+            | sort | head -1 | xargs dirname)
           echo "Building from: $CMAKE_SRC"
+          
           cmake -B build -S "$CMAKE_SRC" \
             -DCMAKE_TOOLCHAIN_FILE=/tmp/arm64.cmake \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel 4
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_VERBOSE_MAKEFILE=ON
+          
+          cmake --build build --parallel 4 --verbose
 
-      - name: Collect output
+      - name: Find all .so files
+        run: find . -name "*.so" 2>/dev/null || echo "No .so files found"
+
+      - name: Rename and collect output
         run: |
-          find build -name "*.so"
-          find build -name "*.so" -exec \
-            cp {} libimgui-moulberry90-java64.so \;
+          SO=$(find build -name "*.so" | head -1)
+          if [ -n "$SO" ]; then
+            echo "Found: $SO"
+            cp "$SO" libimgui-moulberry90-java64.so
+            echo "Copied successfully"
+          else
+            echo "ERROR: No .so file was produced!"
+            exit 1
+          fi
 
       - name: Upload
         uses: actions/upload-artifact@v4
