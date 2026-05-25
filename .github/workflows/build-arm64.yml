@@ -1,0 +1,59 @@
+name: Build ARM64
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            cmake
+
+      - name: Rename package to moulberry90
+        run: |
+          find . -name "*.cpp" -o -name "*.h" | \
+          xargs grep -l "Java_imgui_" 2>/dev/null | \
+          while read f; do
+            sed -i 's/Java_imgui_/Java_imgui_moulberry90_/g' "$f"
+          done
+
+      - name: Create toolchain file
+        run: |
+          cat > /tmp/arm64.cmake << 'EOF'
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR aarch64)
+          set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
+          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+          EOF
+
+      - name: Build
+        run: |
+          CMAKE_SRC=$(find . -name "CMakeLists.txt" \
+            ! -path "*/build/*" | head -1 | xargs dirname)
+          echo "Building from: $CMAKE_SRC"
+          cmake -B build -S "$CMAKE_SRC" \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/arm64.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 4
+
+      - name: Collect output
+        run: |
+          find build -name "*.so"
+          find build -name "*.so" -exec \
+            cp {} libimgui-moulberry90-java64.so \;
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-native
+          path: libimgui-moulberry90-java64.so
